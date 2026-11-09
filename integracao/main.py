@@ -33,11 +33,24 @@ def executar_fluxo_f1(fluxo: FluxoF1):
 
         atendimento = resposta_s2.json()
 
+        resposta_s3 = httpx.post(
+            "http://127.0.0.1:8003/registros-administrativos",
+            json={
+                "atendimento_id": atendimento["id"],
+                "paciente": atendimento["paciente"]
+            },
+            timeout=5
+        )
+        resposta_s3.raise_for_status()
+
+        registro_prontuario = resposta_s3.json()
+
         return {
             "fluxo": "F1",
             "status": "CONCLUIDO",
             "agendamento": agendamento,
-            "atendimento": atendimento
+            "atendimento": atendimento,
+            "registro_prontuario": registro_prontuario
         }
 
     except httpx.HTTPStatusError as erro:
@@ -46,10 +59,10 @@ def executar_fluxo_f1(fluxo: FluxoF1):
             detail="O sistema de origem ou destino recusou a operação."
         )
 
-    except httpx.RequestError:
+    except httpx.RequestError as erro:
         raise HTTPException(
             status_code=503,
-            detail="Não foi possível comunicar com um dos sistemas."
+            detail=f"Não foi possível comunicar com um dos sistemas: {erro}"
         )
 
 
