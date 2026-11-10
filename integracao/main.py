@@ -203,9 +203,9 @@ def painel():
           </article>
 
           <article class="card">
-            <h2>S3 — PEP</h2>
+            <h2>S3 — Prontuário Eletrônico do Paciente (PEP) </h2>
             <p>Prontuário eletrônico: adaptador hipotético.</p>
-            <p class="planejado">● Em construção</p>
+            <p class="disponivel">● Serviço disponível</p>
           </article>
 
           <article class="card">
