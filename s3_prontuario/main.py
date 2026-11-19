@@ -15,6 +15,15 @@ class RegistroAdministrativo(BaseModel):
     paciente: str
 
 
+class RegistroLaboratorial(BaseModel):
+    exame_id: str
+    atendimento_id: str
+    paciente: str
+    exame: str
+    resultado: str
+    hl7_v2: str
+
+
 @app.on_event("startup")
 def iniciar_banco():
     criar_tabela()
@@ -139,4 +148,36 @@ def listar_registros():
             ORDER BY criado_em DESC
         """).fetchall()
 
+    return [dict(item) for item in resultado]
+
+
+@app.post("/registros-laboratoriais")
+def receber_resultado_laboratorial(registro: RegistroLaboratorial):
+    with conectar() as conexao:
+        existente = conexao.execute("""
+            SELECT * FROM registros_laboratoriais WHERE exame_id = ?
+        """, (registro.exame_id,)).fetchone()
+        if existente:
+            return dict(existente)
+
+        novo_registro = {
+            "id": str(uuid.uuid4()),
+            **registro.model_dump(),
+            "criado_em": datetime.now().isoformat(timespec="seconds"),
+        }
+        conexao.execute("""
+            INSERT INTO registros_laboratoriais
+            (id, exame_id, atendimento_id, paciente, exame, resultado, hl7_v2, criado_em)
+            VALUES (:id, :exame_id, :atendimento_id, :paciente, :exame,
+                    :resultado, :hl7_v2, :criado_em)
+        """, novo_registro)
+    return novo_registro
+
+
+@app.get("/registros-laboratoriais")
+def listar_registros_laboratoriais():
+    with conectar() as conexao:
+        resultado = conexao.execute("""
+            SELECT * FROM registros_laboratoriais ORDER BY criado_em DESC
+        """).fetchall()
     return [dict(item) for item in resultado]

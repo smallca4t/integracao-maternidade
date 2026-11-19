@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
@@ -12,6 +12,11 @@ app = FastAPI(title="S2 — Atendimento")
 class AtendimentoEntrada(BaseModel):
     agendamento_id: str
     paciente: str
+
+
+class SolicitacaoExameEntrada(BaseModel):
+    atendimento_id: str
+    exame: str
 
 
 @app.on_event("startup")
@@ -164,4 +169,44 @@ def listar_atendimentos():
             FROM atendimentos
         """).fetchall()
 
+    return [dict(item) for item in resultado]
+
+
+@app.post("/solicitacoes-exame")
+def solicitar_exame(entrada: SolicitacaoExameEntrada):
+    with conectar() as conexao:
+        atendimento = conexao.execute("""
+            SELECT id, paciente FROM atendimentos WHERE id = ?
+        """, (entrada.atendimento_id,)).fetchone()
+        if not atendimento:
+            raise HTTPException(404, "Atendimento não encontrado.")
+
+        existente = conexao.execute("""
+            SELECT id, atendimento_id, paciente, exame, status
+            FROM solicitacoes_exame WHERE atendimento_id = ? AND exame = ?
+        """, (entrada.atendimento_id, entrada.exame)).fetchone()
+        if existente:
+            return dict(existente)
+
+        solicitacao = {
+            "id": str(uuid.uuid4()),
+            "atendimento_id": entrada.atendimento_id,
+            "paciente": atendimento["paciente"],
+            "exame": entrada.exame,
+            "status": "SOLICITADO",
+        }
+        conexao.execute("""
+            INSERT INTO solicitacoes_exame (id, atendimento_id, paciente, exame, status)
+            VALUES (:id, :atendimento_id, :paciente, :exame, :status)
+        """, solicitacao)
+    return solicitacao
+
+
+@app.get("/solicitacoes-exame")
+def listar_solicitacoes_exame():
+    with conectar() as conexao:
+        resultado = conexao.execute("""
+            SELECT id, atendimento_id, paciente, exame, status
+            FROM solicitacoes_exame
+        """).fetchall()
     return [dict(item) for item in resultado]

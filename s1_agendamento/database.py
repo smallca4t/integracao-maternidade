@@ -1,13 +1,22 @@
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
 
 CAMINHO_BANCO = Path(__file__).resolve().parent / "agendamento.db"
 
 
+@contextmanager
 def conectar():
     conexao = sqlite3.connect(CAMINHO_BANCO)
     conexao.row_factory = sqlite3.Row
-    return conexao
+    try:
+        yield conexao
+        conexao.commit()
+    except Exception:
+        conexao.rollback()
+        raise
+    finally:
+        conexao.close()
 
 
 def criar_tabela():
