@@ -1,4 +1,5 @@
 import uuid
+import httpx
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
@@ -16,6 +17,10 @@ class AtendimentoEntrada(BaseModel):
 
 class SolicitacaoExameEntrada(BaseModel):
     atendimento_id: str
+    exame: str
+
+
+class ExameIntegracaoEntrada(BaseModel):
     exame: str
 
 
@@ -122,9 +127,31 @@ def inicio():
                   <strong>${item.paciente}</strong><br>
                   Atendimento: ${item.id}<br>
                   Agendamento de origem: ${item.agendamento_id}<br>
-                  Status: ${item.status}
+                  Status: ${item.status}<br>
+                  <button onclick="enviarExame('${item.id}')">
+                    Solicitar exame pela Integração (F2)
+                  </button>
                 </li>
               `).join("");
+          }
+
+          async function enviarExame(atendimentoId) {
+            const exame = prompt("Qual exame deseja solicitar?");
+            if (!exame) return;
+
+            const resposta = await fetch(
+              `/atendimentos/${atendimentoId}/enviar-exame-integracao`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ exame })
+              }
+            );
+
+            const dados = await resposta.json();
+            document.getElementById("mensagem").textContent = resposta.ok
+              ? `F2 concluído. Exame: ${dados.operacao.exame.id}`
+              : `Falha ao integrar: ${dados.detail}`;
           }
 
           carregarAtendimentos();
@@ -210,3 +237,24 @@ def listar_solicitacoes_exame():
             FROM solicitacoes_exame
         """).fetchall()
     return [dict(item) for item in resultado]
+
+
+@app.post("/atendimentos/{atendimento_id}/enviar-exame-integracao")
+def enviar_exame_para_integracao(atendimento_id: str, entrada: ExameIntegracaoEntrada):
+    with conectar() as conexao:
+        atendimento = conexao.execute("""
+            SELECT id FROM atendimentos WHERE id = ?
+        """, (atendimento_id,)).fetchone()
+    if not atendimento:
+        raise HTTPException(404, "Atendimento não encontrado.")
+
+    try:
+        resposta = httpx.post(
+            "http://127.0.0.1:8000/fluxos/f2",
+            json={"atendimento_id": atendimento_id, "exame": entrada.exame},
+            timeout=5,
+        )
+        resposta.raise_for_status()
+        return {"operacao": resposta.json()}
+    except httpx.HTTPError as erro:
+        raise HTTPException(503, "A Integração não está disponível para executar o F2.") from erro

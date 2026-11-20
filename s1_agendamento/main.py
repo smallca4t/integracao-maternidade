@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 import uuid
+import httpx
 from .database import conectar, criar_tabela
 
 app = FastAPI(title="S1 — Agendamento")
@@ -105,10 +106,25 @@ def inicio():
                     <li>
                         <strong>${item.paciente}</strong> — ${item.data_hora}<br>
                         ID: ${item.id}<br>
-                        Status: ${item.status}
+                        Status: ${item.status}<br>
+                        <button onclick="enviarParaIntegracao('${item.id}')">
+                          Enviar ao atendimento (F1)
+                        </button>
                     </li>
                     `)
                 .join("");
+          }
+
+          async function enviarParaIntegracao(agendamentoId) {
+            const resposta = await fetch(
+              `/agendamentos/${agendamentoId}/enviar-integracao`,
+              { method: "POST" }
+            );
+
+            const dados = await resposta.json();
+            document.getElementById("mensagem").textContent = resposta.ok
+              ? `F1 concluído. Atendimento: ${dados.operacao.atendimento.id}`
+              : `Falha ao integrar: ${dados.detail}`;
           }
 
           carregarAgendamentos();
@@ -166,3 +182,19 @@ def buscar_agendamento(agendamento_id: str):
         )
 
     return dict(resultado)
+
+
+@app.post("/agendamentos/{agendamento_id}/enviar-integracao")
+def enviar_para_integracao(agendamento_id: str):
+    """S1 dispara o F1; a camada de Integração continua sendo a orquestradora."""
+    buscar_agendamento(agendamento_id)
+    try:
+        resposta = httpx.post(
+            "http://127.0.0.1:8000/fluxos/f1",
+            json={"agendamento_id": agendamento_id},
+            timeout=5,
+        )
+        resposta.raise_for_status()
+        return {"operacao": resposta.json()}
+    except httpx.HTTPError as erro:
+        raise HTTPException(503, "A Integração não está disponível para executar o F1.") from erro
