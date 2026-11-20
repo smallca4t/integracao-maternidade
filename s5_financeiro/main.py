@@ -18,6 +18,13 @@ class ItemFaturavel(BaseModel):
     valor: float = Field(gt=0)
 
 
+class EventoFaturavel(BaseModel):
+    origem: str
+    referencia_id: str
+    paciente: str
+    descricao: str
+
+
 @app.on_event("startup")
 def iniciar_banco():
     criar_tabela()
@@ -47,13 +54,56 @@ def listar_itens():
     return [dict(item) for item in itens]
 
 
+@app.post("/eventos-faturaveis")
+def receber_evento(evento: EventoFaturavel):
+    """Pré-faturamento: registra o procedimento, sem atribuir preço automaticamente."""
+    if evento.origem not in {"S2", "S4"}:
+        raise HTTPException(422, "A origem deve ser S2 ou S4.")
+    with conectar() as conexao:
+        existente = conexao.execute("""
+            SELECT * FROM eventos_faturaveis WHERE origem = ? AND referencia_id = ?
+        """, (evento.origem, evento.referencia_id)).fetchone()
+        if existente:
+            return dict(existente)
+        registro = {"id": str(uuid.uuid4()), **evento.model_dump(),
+                    "status": "PENDENTE_DE_VALOR",
+                    "criado_em": datetime.now().isoformat(timespec="seconds")}
+        conexao.execute("""
+            INSERT INTO eventos_faturaveis
+            (id, origem, referencia_id, paciente, descricao, status, criado_em)
+            VALUES (:id, :origem, :referencia_id, :paciente, :descricao, :status, :criado_em)
+        """, registro)
+    return registro
+
+
+@app.get("/eventos-faturaveis")
+def listar_eventos():
+    with conectar() as conexao:
+        itens = conexao.execute("""
+            SELECT * FROM eventos_faturaveis ORDER BY criado_em DESC
+        """).fetchall()
+    return [dict(item) for item in itens]
+
+
+@app.get("/contas-paciente")
+def listar_contas_paciente():
+    with conectar() as conexao:
+        contas = conexao.execute("""
+            SELECT paciente, COUNT(*) AS quantidade_procedimentos,
+                   GROUP_CONCAT(descricao, ' | ') AS procedimentos
+            FROM eventos_faturaveis
+            GROUP BY paciente
+            ORDER BY paciente
+        """).fetchall()
+    return [dict(conta) for conta in contas]
+
+
 @app.get("/", response_class=HTMLResponse)
 def inicio():
     return """
     <html><head><title>S5 — Financeiro</title><style>
-      body{font-family:Arial;background:#f4f7fb;padding:40px}.card{max-width:720px;background:white;border-radius:12px;padding:24px;box-shadow:0 2px 10px #0002}input,select,button{display:block;width:100%;box-sizing:border-box;margin-top:10px;padding:10px;border-radius:6px}input,select{border:1px solid #bbb}button{border:0;background:#166534;color:white;cursor:pointer}.status{color:#147a3d;font-weight:bold}li{margin:12px 0;padding-bottom:12px;border-bottom:1px solid #ddd}
-    </style></head><body><div class="card"><h1>S5 — Financeiro</h1><p><strong>Função:</strong> receber itens faturáveis de S2 e S4.</p><p class="status">● Serviço disponível</p><h2>Novo item faturável</h2><select id="origem"><option>S2</option><option>S4</option></select><input id="referencia" placeholder="ID de atendimento ou exame"><input id="paciente" placeholder="Nome da paciente"><input id="descricao" placeholder="Descrição"><input id="valor" type="number" step="0.01" placeholder="Valor"><button onclick="enviar()">Registrar item</button><p id="mensagem"></p><h2>Itens recebidos</h2><ul id="lista"></ul></div><script>
-      async function enviar(){const body={origem:origem.value,referencia_id:referencia.value,paciente:paciente.value,descricao:descricao.value,valor:Number(valor.value)};const r=await fetch('/itens-faturaveis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const d=await r.json();mensagem.textContent=r.ok?'Item registrado: '+d.id:'Falha: '+JSON.stringify(d.detail);carregar()}
-      async function carregar(){const r=await fetch('/itens-faturaveis');const itens=await r.json();lista.innerHTML=itens.map(x=>`<li><strong>${x.descricao}</strong> — R$ ${x.valor.toFixed(2)}<br>Origem: ${x.origem}; Status: ${x.status}</li>`).join('')};carregar()
+      body{font-family:Arial;background:#f4f7fb;padding:40px}.card{max-width:760px;background:white;border-radius:12px;padding:24px;box-shadow:0 2px 10px #0002}.status{color:#147a3d;font-weight:bold}li{margin:12px 0;padding-bottom:12px;border-bottom:1px solid #ddd}.muted{color:#5b6472}
+    </style></head><body><div class="card"><h1>S5 — Financeiro</h1><p><strong>Função:</strong> organizar a conta da paciente a partir de eventos clínicos faturáveis.</p><p class="muted">Os procedimentos chegam pela Integração sem valor. A precificação é uma etapa administrativa posterior.</p><p class="status">● Serviço disponível</p><h2>Contas por paciente</h2><ul id="contas"></ul><h2>Procedimentos aguardando valor</h2><ul id="eventos"></ul></div><script>
+      async function carregar(){const [a,b]=await Promise.all([fetch('/contas-paciente'),fetch('/eventos-faturaveis')]);const contas=await a.json(),eventos=await b.json();document.getElementById('contas').innerHTML=contas.map(x=>`<li><strong>${x.paciente}</strong><br>${x.quantidade_procedimentos} procedimento(s): ${x.procedimentos}</li>`).join('')||'<li class="muted">Nenhuma conta em aberto.</li>';document.getElementById('eventos').innerHTML=eventos.map(x=>`<li><strong>${x.descricao}</strong> — ${x.paciente}<br>Origem: ${x.origem}; Referência: ${x.referencia_id}<br>Status: ${x.status}</li>`).join('')||'<li class="muted">Nenhum procedimento aguardando valor.</li>'};carregar()
     </script></body></html>
     """

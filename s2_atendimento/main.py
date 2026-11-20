@@ -78,6 +78,8 @@ def inicio():
           <h1>S2 — Atendimento</h1>
           <p><strong>Função:</strong> abrir atendimentos a partir de agendamentos.</p>
           <p><strong>Representação:</strong> sistema local de atendimento.</p>
+          <p><strong>Fluxo clínico:</strong> após a avaliação da paciente pelo médico,
+            o exame pode ser solicitado a partir do atendimento aberto.</p>
           <p class="status">● Serviço disponível</p>
 
           <h2>Abrir atendimento</h2>

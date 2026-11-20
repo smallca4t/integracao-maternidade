@@ -83,14 +83,20 @@ def inicio():
 
           <h2>Registros administrativos recebidos</h2>
           <ul id="lista"></ul>
+
+          <h2>Resultados laboratoriais recebidos</h2>
+          <ul id="listaLaboratorial"></ul>
         </div>
 
         <script>
           async function carregarRegistros() {
-            const resposta =
-              await fetch("/registros-administrativos");
+            const [respostaAdministrativa, respostaLaboratorial] = await Promise.all([
+              fetch("/registros-administrativos"),
+              fetch("/registros-laboratoriais")
+            ]);
 
-            const registros = await resposta.json();
+            const registros = await respostaAdministrativa.json();
+            const registrosLaboratoriais = await respostaLaboratorial.json();
 
             document.getElementById("lista").innerHTML =
               registros.map(item => `
@@ -101,6 +107,17 @@ def inicio():
                   Recebido em: ${item.criado_em}
                 </li>
               `).join("");
+
+            document.getElementById("listaLaboratorial").innerHTML =
+              registrosLaboratoriais.map(item => `
+                <li>
+                  <strong>${item.exame}</strong> — ${item.paciente}<br>
+                  Atendimento: ${item.atendimento_id}<br>
+                  Resultado: ${item.resultado}<br>
+                  Exame: ${item.exame_id}<br>
+                  Recebido em: ${item.criado_em}
+                </li>
+              `).join("") || "<li>Nenhum resultado laboratorial recebido.</li>";
           }
 
           carregarRegistros();

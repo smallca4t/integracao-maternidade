@@ -22,6 +22,18 @@ def conectar():
 def criar_tabela():
     with conectar() as conexao:
         conexao.execute("""
+            CREATE TABLE IF NOT EXISTS eventos_faturaveis (
+                id TEXT PRIMARY KEY,
+                origem TEXT NOT NULL,
+                referencia_id TEXT NOT NULL,
+                paciente TEXT NOT NULL,
+                descricao TEXT NOT NULL,
+                status TEXT NOT NULL,
+                criado_em TEXT NOT NULL,
+                UNIQUE(origem, referencia_id)
+            )
+        """)
+        conexao.execute("""
             CREATE TABLE IF NOT EXISTS itens_faturaveis (
                 id TEXT PRIMARY KEY,
                 origem TEXT NOT NULL,
